@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>S3 Bucket Explorer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; color: #f8fafc; }
+    .status-bar { display: flex; gap: 1rem; align-items: center; background: #1e293b; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.85rem; flex-wrap: wrap; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .status-dot.ok { background: #22c55e; }
+    .status-dot.err { background: #ef4444; }
+    .status-label { color: #94a3b8; }
+    .status-value { color: #e2e8f0; font-family: monospace; }
+
+    .drop-zone { border: 2px dashed #334155; border-radius: 8px; padding: 2rem; text-align: center; color: #64748b; cursor: pointer; transition: all 0.2s; margin-bottom: 1.5rem; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: #3b82f6; color: #93c5fd; background: rgba(59, 130, 246, 0.05); }
+    .drop-zone input { display: none; }
+
+    .objects-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+    .objects-header h2 { font-size: 1.1rem; font-weight: 500; }
+    .refresh-btn { background: none; border: 1px solid #334155; color: #94a3b8; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+    .refresh-btn:hover { border-color: #3b82f6; color: #93c5fd; }
+
+    .objects-list { background: #1e293b; border-radius: 8px; overflow: hidden; }
+    .object-row { display: flex; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid #0f172a; gap: 1rem; }
+    .object-row:last-child { border-bottom: none; }
+    .object-key { flex: 1; font-family: monospace; font-size: 0.85rem; word-break: break-all; }
+    .object-size { color: #64748b; font-size: 0.8rem; white-space: nowrap; }
+    .object-date { color: #64748b; font-size: 0.8rem; white-space: nowrap; }
+    .object-actions { display: flex; gap: 0.5rem; }
+    .btn { background: none; border: none; cursor: pointer; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.8rem; }
+    .btn-download { color: #3b82f6; }
+    .btn-download:hover { background: rgba(59, 130, 246, 0.1); }
+    .btn-delete { color: #ef4444; }
+    .btn-delete:hover { background: rgba(239, 68, 68, 0.1); }
+
+    .empty { padding: 2rem; text-align: center; color: #475569; }
+    .toast { position: fixed; bottom: 2rem; right: 2rem; padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.85rem; opacity: 0; transition: opacity 0.3s; z-index: 100; }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #166534; color: #bbf7d0; }
+    .toast.error { background: #991b1b; color: #fecaca; }
+    .uploading { color: #3b82f6; font-size: 0.85rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>S3 Bucket Explorer</h1>
+
+    <div class="status-bar" id="statusBar">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-label">Bucket:</span>
+      <span class="status-value" id="bucketName">loading...</span>
+      <span class="status-label">Region:</span>
+      <span class="status-value" id="bucketRegion">-</span>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+      <p>Drop files here or click to upload</p>
+      <input type="file" id="fileInput" multiple>
+      <div class="uploading" id="uploadStatus" style="display:none"></div>
+    </div>
+
+    <div class="objects-header">
+      <h2>Objects</h2>
+      <button class="refresh-btn" onclick="loadObjects()">Refresh</button>
+    </div>
+    <div class="objects-list" id="objectsList">
+      <div class="empty">Loading...</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const objectsList = document.getElementById('objectsList');
+    const toast = document.getElementById('toast');
+    const uploadStatus = document.getElementById('uploadStatus');
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        document.getElementById('bucketName').textContent = data.bucket_name || 'not configured';
+        document.getElementById('bucketRegion').textContent = data.bucket_region || '-';
+        const dot = document.getElementById('statusDot');
+        dot.classList.toggle('ok', data.connected);
+        dot.classList.toggle('err', !data.connected);
+      } catch (e) {
+        document.getElementById('bucketName').textContent = 'error';
+        document.getElementById('statusDot').classList.add('err');
+      }
+    }
+
+    function createObjectRow(obj) {
+      const row = document.createElement('div');
+      row.className = 'object-row';
+
+      const keySpan = document.createElement('span');
+      keySpan.className = 'object-key';
+      keySpan.textContent = obj.key;
+
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'object-size';
+      sizeSpan.textContent = formatSize(obj.size);
+
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'object-date';
+      dateSpan.textContent = new Date(obj.last_modified).toLocaleDateString();
+
+      const actions = document.createElement('span');
+      actions.className = 'object-actions';
+
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'btn btn-download';
+      dlBtn.textContent = 'Download';
+      dlBtn.addEventListener('click', () => downloadObject(obj.key));
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-delete';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', () => deleteObject(obj.key));
+
+      actions.appendChild(dlBtn);
+      actions.appendChild(delBtn);
+      row.appendChild(keySpan);
+      row.appendChild(sizeSpan);
+      row.appendChild(dateSpan);
+      row.appendChild(actions);
+      return row;
+    }
+
+    async function loadObjects() {
+      try {
+        const res = await fetch('/objects');
+        const data = await res.json();
+        objectsList.textContent = '';
+        if (!data.objects || data.objects.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'No objects in bucket';
+          objectsList.appendChild(empty);
+          return;
+        }
+        data.objects.forEach(obj => objectsList.appendChild(createObjectRow(obj)));
+      } catch (e) {
+        objectsList.textContent = '';
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'Error loading objects';
+        objectsList.appendChild(empty);
+      }
+    }
+
+    async function uploadFiles(files) {
+      uploadStatus.style.display = 'block';
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        uploadStatus.textContent = `Uploading ${f.name} (${i + 1}/${files.length})...`;
+        const form = new FormData();
+        form.append('file', f);
+        form.append('key', f.name);
+        try {
+          const res = await fetch('/upload', { method: 'POST', body: form });
+          if (!res.ok) throw new Error(await res.text());
+          showToast(`Uploaded ${f.name}`, 'success');
+        } catch (e) {
+          showToast(`Failed to upload ${f.name}`, 'error');
+        }
+      }
+      uploadStatus.style.display = 'none';
+      loadObjects();
+    }
+
+    function downloadObject(key) {
+      window.open(`/objects/${encodeURIComponent(key)}`, '_blank');
+    }
+
+    async function deleteObject(key) {
+      try {
+        const res = await fetch(`/objects/${encodeURIComponent(key)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(await res.text());
+        showToast(`Deleted ${key}`, 'success');
+        loadObjects();
+      } catch (e) {
+        showToast(`Failed to delete ${key}`, 'error');
+      }
+    }
+
+    function showToast(msg, type) {
+      toast.textContent = msg;
+      toast.className = `toast show ${type}`;
+      setTimeout(() => toast.className = 'toast', 3000);
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => uploadFiles(e.target.files));
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); uploadFiles(e.dataTransfer.files); });
+
+    loadHealth();
+    loadObjects();
+  </script>
+</body>
+</html>
