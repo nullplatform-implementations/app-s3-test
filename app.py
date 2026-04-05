@@ -6,8 +6,8 @@ import io
 
 app = Flask(__name__, static_folder="static")
 
-BUCKET_NAME = os.environ.get("BUCKET_NAME", "")
-BUCKET_REGION = os.environ.get("BUCKET_REGION", "us-east-1")
+BUCKET_NAME = os.environ.get("AWS_S3_BUCKET_TEST_BUCKET_NAME", "")
+BUCKET_REGION = os.environ.get("AWS_S3_BUCKET_TEST_BUCKET_REGION", "us-east-1")
 
 
 def get_s3_client():
@@ -25,7 +25,7 @@ def health():
         "status": "ok",
         "bucket_name": BUCKET_NAME,
         "bucket_region": BUCKET_REGION,
-        "bucket_arn": os.environ.get("BUCKET_ARN", ""),
+        "bucket_arn": os.environ.get("AWS_S3_BUCKET_TEST_BUCKET_ARN", ""),
         "connected": BUCKET_NAME != "",
     })
 
