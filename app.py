@@ -6,10 +6,10 @@ import io
 
 app = Flask(__name__, static_folder="static")
 
-BUCKET_NAME = os.environ.get("S3_SERVICE_TEST_BUCKET_NAME", "")
-BUCKET_REGION = os.environ.get("S3_SERVICE_TEST_AWS_REGION", "us-east-1")
-AWS_ACCESS_KEY_ID = os.environ.get("S3_SERVICE_TEST_AWS_ACCESS_KEY_ID", "")
-AWS_SECRET_ACCESS_KEY = os.environ.get("S3_SERVICE_TEST_AWS_SECRET_ACCESS_KEY
+BUCKET_NAME = os.environ.get("S3_SERVICE_K8S_BUCKET_NAME", "")
+BUCKET_REGION = os.environ.get("S3_SERVICE_K8S_BUCKET_REGION", "us-east-1")
+AWS_ACCESS_KEY_ID = os.environ.get("S3_SERVICE_K8S_AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("S3_SERVICE_K8S_AWS_SECRET_ACCESS_KEY
 ", "")
 
 
@@ -32,7 +32,7 @@ def health():
         "status": "ok",
         "bucket_name": BUCKET_NAME,
         "bucket_region": BUCKET_REGION,
-        "bucket_arn": os.environ.get("S3_SERVICE_TEST_BUCKET_ARN", ""),
+        "bucket_arn": os.environ.get("S3_SERVICE_K8S_BUCKET_ARN", ""),
         "connected": BUCKET_NAME != "",
     })
 
