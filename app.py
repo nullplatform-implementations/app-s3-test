@@ -9,8 +9,7 @@ app = Flask(__name__, static_folder="static")
 BUCKET_NAME = os.environ.get("S3_SERVICE_K8S_BUCKET_NAME", "")
 BUCKET_REGION = os.environ.get("S3_SERVICE_K8S_BUCKET_REGION", "us-east-1")
 AWS_ACCESS_KEY_ID = os.environ.get("S3_SERVICE_K8S_AWS_ACCESS_KEY_ID", "")
-AWS_SECRET_ACCESS_KEY = os.environ.get("S3_SERVICE_K8S_AWS_SECRET_ACCESS_KEY
-", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("S3_SERVICE_K8S_AWS_SECRET_ACCESS_KEY", "")
 
 
 def get_s3_client():
